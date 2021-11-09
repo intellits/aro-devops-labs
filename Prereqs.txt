@@ -1,0 +1,143 @@
+1. Log into the Azure portal and start the Cloud Shell
+
+2. Get ARO kubeadmin credentials:
+export CLUSTER=$(az aro list | sed '1d;$d' | jq -r .name)
+
+export RESOURCEGROUP=$(az aro list | sed '1d;$d' | jq -r .resourceGroup)
+
+az aro list-credentials --name $CLUSTER --resource-group $RESOURCEGROUP 
+
+
+3. Get ARO cluster UI:
+az aro show --name $CLUSTER --resource-group $RESOURCEGROUP --query "consoleProfile.url" -o tsv
+
+
+4. Log into your ARO cluster using the credentials from step 2 and the URL from step 3.
+
+
+5. Install the OpenShift CLI into Azure Cloud Shell 
+(oc binary will be in $HOME/bin when done)
+
+Paste the command below into your Azure Cloud Shell but do not execute it:
+test ! -d ~/bin && mkdir ~/bin; curl <YOURLINK> | tar xvC ~/bin; oc version
+
+From ARO UI: 
+Select ‘?’ next to account drop-down. Select ‘Copy command line tools’
+On resulting page, right-click or control-click the ‘Linux for x86_64’ option 
+and ‘Copy link address’
+Replace <YOURLINK> in Azure Cloud Shell with this link
+
+
+6. Create GitHub account & initialize the local git credentials 
+Create GitHub account or log in to your existing one
+	http://www.github.com
+
+In your Azure Cloud Shell, initialize the local git credentials 
+	gh auth login
+
+In your Azure Cloud Shell, type the following
+	git config --global user.name “Fname Lname”
+    git config --global user.email “youremail@email.com”
+
+
+7. Fork the ARO DevOps Lab repo on github:
+https://github.com/haithamshahin333/aro-devops-labs
+
+8. Clone it locally in your Azure Cloud Shell:
+	git clone https://github.com/<YOUR_GH_UID>/aro-devops-labs
+		-or-
+	In github, hit Code button and copy the https link and then
+	git clone <HttpsLink>
+
+9. Checkout branch lab-2 which contains the CI/CD workshop using GitHub Actions:
+	cd aro-devops-labs
+	git checkout lab-2
+
+10. Go back to the ARO UI, select the kube:admin dropdown in the top right menu and select Copy login command. 
+
+Go to Azure Cloud Shell and execute this oc login command that you copied.
+
+11. Create a new project in ARO using oc in the Azure Cloud Shell
+oc new-project cicd-gh-actions
+
+12. Install a demo app using a helm chart: 
+	“Package management for kubernetes clusters”
+	View the helm chart:
+		helm template express-app charts/app-chart/.
+	Execute the helm chart:
+		helm template express-app charts/app-chart/. | oc apply -f -
+
+13. In ARO UI, switch to Developer view and look at project lab-2’s Topology. You’ll see an application called node-express-app but it will indicate an error with the build. This is expected. The next step will fix it.
+
+14. Start a Source-to-Image (S2I) build using the code in your locally cloned repo:
+	oc start-build node-express-app --from-dir=src --follow
+
+	Once the build is finished, go to the Topology view again and click on the app’s route. This opens the app in a separate tab.
+
+15. Create the service account for GitHub Actions
+	export SA=github-actions-sa
+	oc create sa $SA
+
+	Grant the SA edit access to the project
+		oc policy add-role-to-user edit -z $SA
+
+16. Get the SA’s TOKEN
+export SECRETS=$(oc get sa $SA -o jsonpath='{.secrets[*].name}{"\n"}')
+export SECRET_NAME=$(printf "%s\n" $SECRETS | grep "token")
+export ENCODED_TOKEN=$(oc get secret $SECRET_NAME -o jsonpath='{.data.token}{"\n"}')
+export TOKEN=$(echo $ENCODED_TOKEN | base64 -d) && echo $TOKEN
+
+
+17. Set up Secrets. Go to Settings→ Secrets
+
+	Add the following Repository Secrets
+	OPENSHIFT_SERVER 
+		# this is the api url - run `oc cluster-info` to see this url
+	OPENSHIFT_TOKEN  
+		# this is the SA token - run `echo $TOKEN` again in Azure shell to see this value
+	OPENSHIFT_NAMESPACE
+		# set to cicd-gh-actions
+
+18. Enable Actions
+	Go back to your repository (account drop-down, Your repositories)
+
+	Click Actions tab. Scroll down and select Set up this workflow under OpenShift. Select Start Commit on the page that results.
+
+	Hit the Code tab in GitHub, select the lab-2 branch (currently says main) and select the .github/workflows directory. Open up the openshift.yml file. Notice where the above secrets are referenced.
+
+
+19. Execute the CI/CD workflow. Make a change to src/public/index.html and commit the changes from your repo up to GitHub.
+	code src/public/index.html
+	# make a change by adding another <p> </p> line, then hit ... in upper right and select 'Save file'
+	git commit -am “Made our first code change”
+	git push
+
+	Quickly go over to GitHub and watch the workflow events (next step).
+
+20. Go view the workflow executing in GitHub
+	Click the Actions tab
+	Click on the run
+	
+	Once it completes, go back to the application (which you opened in a separate tab) and view your changes which were processed by GitHub Actions and pushed through to production. Will need to reload the app page to see the change.
+
+
+Useful Azure Cloud Shell command lines
+
+In your Azure Cloud Shell, set these variables:
+
+	export CLUSTER=$(az aro list | sed '1d;$d' | jq -r .name)
+
+	export RESOURCEGROUP=$(az aro list | sed '1d;$d' | jq -r .resourceGroup)
+
+Get the kubeadmin credentials for your ARO cluster:
+
+	az aro list-credentials --name $CLUSTER --resource-group $RESOURCEGROUP 
+
+Get the cluster UI URL:
+	az aro show --name $CLUSTER --resource-group $RESOURCEGROUP --query "consoleProfile.url" -o tsv
+Get the cluster’s API:
+	az aro show -g $RESOURCEGROUP -n $CLUSTER --query apiserverProfile.url -o tsv
+
+
+
+
